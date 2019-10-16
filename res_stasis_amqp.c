@@ -62,6 +62,18 @@
 						<para>Defaults to empty string</para>
 					</description>
 				</configOption>
+				<configOption name="eventfilter">
+                                        <synopsis>Events to Filter - Separator: , </synopsis>
+                                        <description>
+                                                <para>Defaults to empty string</para>
+                                        </description>
+                                </configOption>
+                                <configOption name="channelevents">
+                                        <synopsis>Events on Channel </synopsis>
+                                        <description>
+                                                <para>yes</para>
+                                        </description>
+                                </configOption>
 			</configObject>
 		</configFile>
 	</configInfo>
@@ -129,6 +141,10 @@ struct stasis_amqp_global_conf {
 		AST_STRING_FIELD(queue);
 		/*! \brief exchange name */
 		AST_STRING_FIELD(exchange);
+		/*! \brief eventfilter name */
+		AST_STRING_FIELD(eventfilter);
+		/*! \brief channelevents name */
+		int channelevents;	
 	);
 	/*! \brief current connection to amqp */
 	struct ast_amqp_connection *amqp;
@@ -356,6 +372,7 @@ static void stasis_amqp_message_handler(void *data, const char *app_name, struct
 static void send_ami_event_to_amqp(void *data, struct stasis_subscription *sub,
 									struct stasis_message *message)
 {
+	RAII_VAR(struct stasis_amqp_conf *, conf, NULL, ao2_cleanup);
 	RAII_VAR(struct ast_json *, json, NULL, ast_json_unref);
 	RAII_VAR(char *, routing_key, NULL, ast_free);
 	RAII_VAR(struct ast_manager_event_blob *, manager_blob, NULL, ao2_cleanup);
@@ -375,6 +392,19 @@ static void send_ami_event_to_amqp(void *data, struct stasis_subscription *sub,
 
 	RAII_VAR(char *, fields, NULL, ast_free);
 	fields = ast_strdup(manager_blob->extra_fields);
+
+        conf = ao2_global_obj_ref(confs);
+        char delim[] = ",";
+        char *ptr = strtok(ast_strdup(conf->global->eventfilter), delim);
+
+        while(ptr != NULL)
+        {
+		if(strcmp(ast_strdup(manager_blob->manager_event), ptr)==0)
+	    	{
+			return;
+    		}
+		ptr = strtok(NULL, delim);
+        }
 
 	res = manager_event_to_json(json, manager_blob->manager_event, fields);
 	if (res) {
@@ -427,12 +457,15 @@ char *new_routing_key(const char *prefix, const char *suffix)
  */
 static int stasis_amqp_channel_log(struct stasis_message *message)
 {
+	RAII_VAR(struct stasis_amqp_conf *, conf, NULL, ao2_cleanup);
 	RAII_VAR(struct ast_json *, json, NULL, ast_json_free);
 	RAII_VAR(struct ast_json *, channel, NULL, ast_json_free);
 	RAII_VAR(struct ast_json *, unique_id, NULL, ast_json_free);
 	RAII_VAR(char *, routing_key, NULL, ast_free);
 	const char *routing_key_prefix = "stasis.channel";
 
+	conf = ao2_global_obj_ref(confs);
+	
 	if (!(json = stasis_message_to_json(message, NULL))) {
 		return -1;
 	}
@@ -449,6 +482,11 @@ static int stasis_amqp_channel_log(struct stasis_message *message)
 	if (!(routing_key = new_routing_key(routing_key_prefix, ast_json_string_get(unique_id)))) {
 		return -1;
 	}
+
+        if (!conf->global->channelevents) {
+		return -1;
+        }
+
 
 	publish_to_amqp(routing_key, "stasis_channel", stasis_message_eid(message), json);
 
@@ -573,7 +611,12 @@ static int load_config(int reload)
 	aco_option_register(&cfg_info, "exchange", ACO_EXACT,
 		global_options, "", OPT_STRINGFIELD_T, 0,
 		STRFLDSET(struct stasis_amqp_global_conf, exchange));
-
+	aco_option_register(&cfg_info, "eventfilter", ACO_EXACT,
+                global_options, "", OPT_STRINGFIELD_T, 0,
+                STRFLDSET(struct stasis_amqp_global_conf, eventfilter));
+        aco_option_register(&cfg_info, "channelevents", ACO_EXACT,
+                global_options, "no", OPT_BOOL_T, 1,
+                STRFLDSET(struct stasis_amqp_global_conf, channelevents));
 
 	switch (aco_process_config(&cfg_info, reload)) {
 	case ACO_PROCESS_ERROR:

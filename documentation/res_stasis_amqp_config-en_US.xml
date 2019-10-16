@@ -24,6 +24,18 @@
 						<para>Defaults to empty string</para>
 					</description>
 				</configOption>
+				<configOption name="eventfilter">
+                                        <synopsis>Events to Filter - Separator: , </synopsis>
+                                        <description>
+                                                <para>Defaults to empty string</para>
+                                        </description>
+                                </configOption>
+                                <configOption name="channelevents">
+                                        <synopsis>Events on Channel </synopsis>
+                                        <description>
+                                                <para>yes</para>
+                                        </description>
+                                </configOption>
 			</configObject>
 		</configFile>
 	</configInfo>
